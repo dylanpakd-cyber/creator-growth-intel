@@ -1,0 +1,9 @@
+{
+  "name": "creator-growth-intel",
+  "version": "1.0.0",
+  "description": "MCP server answering creator-marketing, UGC and app-growth questions from what operators said in public, with a quote and a permalink on every answer",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": { "build": "node bin/build.mjs", "start": "node mcp/server.mjs" }
+}

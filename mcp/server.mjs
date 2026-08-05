@@ -47,6 +47,8 @@ function getDb() {
   return db;
 }
 
+const STOP = new Set(["the","a","an","of","to","for","in","on","is","are","do","does","what","how","and","or","we","you","i","it","that","this","with","at","be","can","should","my","our"]);
+
 const fmtInt = (n) => (n == null ? "?" : Number(n).toLocaleString());
 
 // Sources are working practitioners, and many of them sell something in this category:
@@ -191,8 +193,22 @@ const HANDLERS = {
     const strict = ftsAll(query);
     const loose = ftsEscape(query);
     let rows = strict ? runQuery(strict) : [];
-    let looseFallback = false;
-    if (!rows.length) { rows = runQuery(loose); looseFallback = Boolean(strict) && rows.length > 0; }
+    if (!rows.length) rows = runQuery(loose);
+
+    // Whether a hit is a real answer or a keyword collision is a question of how much of the
+    // question it actually covers, not of which SQL branch ran. "why creators ghost" collides
+    // with "hire 50 ghost creators" on one word and should say so; a strict-AND flag fires on
+    // almost every natural sentence and becomes noise nobody reads. So measure term coverage on
+    // the best row and warn only when it is genuinely thin.
+    const terms = (String(query ?? "").toLowerCase().match(/[a-z0-9_']+/g) ?? [])
+      .filter((t) => t.length > 2 && !STOP.has(t));
+    const covered = (r) => {
+      if (!terms.length) return 1;
+      const hay = `${r.claim_text} ${r.quote} ${r.topic}`.toLowerCase();
+      return terms.filter((t) => hay.includes(t)).length / terms.length;
+    };
+    const best = rows.length ? Math.max(...rows.map(covered)) : 0;
+    const looseFallback = rows.length > 0 && best < 0.5;
 
     if (!rows.length) {
       return `NO COVERAGE. ${fmtInt(total)} claims are indexed and none match "${query}"` +
@@ -216,9 +232,9 @@ const HANDLERS = {
     return [
       `${rows.length} claim(s) of ${fmtInt(total)} indexed.`,
       looseFallback
-        ? "\n**LOOSE MATCH.** No claim contains all of your search terms, so these matched on some of " +
-          "them and may be tangential. Treat this as weak coverage and say so rather than presenting " +
-          "it as an answer to the question you were asked.\n"
+        ? "\n**WEAK MATCH.** These results cover less than half of what you asked about, so they may be " +
+          "keyword collisions rather than answers. Say so rather than presenting them as an answer, " +
+          "and try narrower terms or `coverage_for` to check the subject exists here at all.\n"
         : "",
       rows.map(renderClaim).join("\n\n"),
       `\n---\n${STANDING_CAVEAT}`,
